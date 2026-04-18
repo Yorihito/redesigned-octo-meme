@@ -63,7 +63,7 @@ struct SpatialMarqueeView: View {
     }
 
     private func rebuildMatrix() {
-        let rows = max(7, Int(settings.glyphHeight / settings.dotSize))
-        matrix = BitmapFont.matrix(for: settings.text, glyphRows: rows)
+        let hasNonAscii = settings.text.unicodeScalars.contains { $0.value > 0x7E }
+        matrix = BitmapFont.matrix(for: settings.text, glyphRows: hasNonAscii ? 16 : 7)
     }
 }
