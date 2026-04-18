@@ -1,65 +1,60 @@
 import SwiftUI
 
-// Renders the dot matrix for spatial-fixed mode, offsetting with device motion.
 struct SpatialMarqueeView: View {
     let settings: DisplaySettings
-    @State private var motionService = MotionService()
+    @State private var motion = MotionService()
     @State private var matrix: DotMatrix = .empty
 
     var body: some View {
-        GeometryReader { geo in
-            Canvas { ctx, size in
-                let renderer = DotRenderer(
-                    matrix: matrix,
-                    dotSize: settings.dotSize,
-                    spacing: settings.dotSpacing,
-                    fgColor: settings.fgColor,
-                    bgColor: settings.bgColor
-                )
-                let contentW = renderer.totalWidth
-                let contentH = renderer.totalHeight
+        // Access motion properties HERE so @Observable tracks them and re-renders Canvas
+        let yaw   = motion.yawOffset
+        let pitch = motion.pitchOffset
 
-                // Convert attitude offsets to pixel offsets.
-                // sensitivity=1 means π/2 radians ≈ half content width shift.
-                let scale = settings.spatialSensitivity * (contentW / (.pi / 2))
-                let pitchScale = settings.spatialSensitivity * (contentH / (.pi / 2))
+        Canvas { ctx, size in
+            let r = DotRenderer(
+                matrix: matrix,
+                dotSize: settings.dotSize,
+                spacing: settings.dotSpacing,
+                fgColor: settings.fgColor,
+                bgColor: settings.bgColor
+            )
+            let cw = r.totalWidth
+            let ch = r.totalHeight
 
-                let rawX = CGFloat(motionService.yawOffset) * scale
-                let rawY = CGFloat(motionService.pitchOffset) * pitchScale
+            // Base center position
+            let baseX = max(0, (size.width  - cw) / 2)
+            let baseY = max(0, (size.height - ch) / 2)
 
-                // Clamp so the content doesn't scroll completely off screen
-                let maxX = max(0, contentW - size.width)
-                let maxY = max(0, contentH - size.height)
-                let clampedX = max(-size.width / 2, min(maxX + size.width / 2, rawX))
-                let clampedY = max(-size.height / 2, min(maxY + size.height / 2, rawY))
+            // Motion offset: sensitivity=1 → π/2 rad ≈ contentSize/2 shift
+            let xShift = CGFloat(yaw)   * settings.spatialSensitivity * cw / (.pi / 2)
+            let yShift = CGFloat(pitch) * settings.spatialSensitivity * ch / (.pi / 2)
 
-                let x = (size.width - contentW) / 2 - clampedX
-                let y = (size.height - contentH) / 2 - clampedY
+            // Clamp so content never scrolls more than one screen away
+            let clampedX = max(-(cw - size.width  + size.width  / 2),
+                               min(size.width  / 2, xShift))
+            let clampedY = max(-(ch - size.height + size.height / 2),
+                               min(size.height / 2, yShift))
 
-                renderer.draw(in: &ctx, offset: CGPoint(x: x, y: y))
-            }
-            .background(settings.bgColor)
-            .overlay(alignment: .bottomTrailing) {
-                Button {
-                    motionService.resetReference()
-                } label: {
-                    Image(systemName: "scope")
-                        .font(.title2)
-                        .padding(12)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .padding()
-            }
-            .onAppear {
-                rebuildMatrix()
-                motionService.start()
-            }
-            .onDisappear {
-                motionService.stop()
-            }
-            .onChange(of: settings.text) { _, _ in rebuildMatrix() }
-            .onChange(of: settings.dotSize) { _, _ in rebuildMatrix() }
+            r.draw(in: &ctx, offset: CGPoint(x: baseX - clampedX, y: baseY - clampedY))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(settings.bgColor)
+        .overlay(alignment: .bottomTrailing) {
+            Button { motion.resetReference() } label: {
+                Image(systemName: "scope")
+                    .font(.title2)
+                    .padding(12)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .padding()
+        }
+        .onAppear {
+            rebuildMatrix()
+            motion.start()
+        }
+        .onDisappear { motion.stop() }
+        .onChange(of: settings.text)    { _, _ in rebuildMatrix() }
+        .onChange(of: settings.dotSize) { _, _ in rebuildMatrix() }
     }
 
     private func rebuildMatrix() {

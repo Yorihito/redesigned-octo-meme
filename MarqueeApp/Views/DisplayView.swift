@@ -28,6 +28,7 @@ struct DisplayView: View {
                 controlBar
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
     }
